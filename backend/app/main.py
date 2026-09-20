@@ -6,7 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .lethality import THRESHOLD_MINUTES, compute_lethality, round_half_up
+from .lethality import THRESHOLD_MINUTES, compute_lethality
 from .validation import ValidationIssue, validate_payload
 
 app = FastAPI(title="蒸汽杀菌致死量 F₀ 复核", version="1.0.0")
@@ -70,7 +70,7 @@ async def calculate(request: Request):
                 "startRate": s.start_rate,
                 "endRate": s.end_rate,
                 "durationSeconds": s.duration_seconds,
-                "contribution": float(round_half_up(s.contribution)),
+                "contribution": s.contribution,
             }
             for s in result.segments
         ],
