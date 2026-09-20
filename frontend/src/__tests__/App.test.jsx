@@ -116,6 +116,53 @@ describe('计算与结论展示', () => {
     expect(conclusion).toHaveTextContent('尚差 0.02 min');
   });
 
+  it('微小段贡献完整展示，可据分段复算合计', async () => {
+    // 100 °C 下两个 30 s 段各约 0.003881 min：接口返回未舍入段贡献，
+    // 页面须显示 0.003881 而非 0.000000，合计为 0.01
+    const smallSegmentsResponse = {
+      f0: 0.01,
+      threshold: 3.0,
+      passed: false,
+      shortfall: 2.99,
+      segments: [
+        { index: 1, startTime: 0, endTime: 30, startTemperature: 100, endTemperature: 100, startRate: 0.007762, endRate: 0.007762, durationSeconds: 30, contribution: 0.00388123558 },
+        { index: 2, startTime: 30, endTime: 60, startTemperature: 100, endTemperature: 100, startRate: 0.007762, endRate: 0.007762, durationSeconds: 30, contribution: 0.00388123558 },
+      ],
+    };
+    const user = userEvent.setup();
+    mockFetchResponse(200, smallSegmentsResponse);
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: '计算致死量' }));
+
+    await screen.findByTestId('conclusion');
+    const rows = within(screen.getByLabelText('计算结果')).getAllByRole('row');
+    // 表头 1 行 + 2 段 + 合计 1 行
+    expect(rows).toHaveLength(4);
+    expect(rows[1]).toHaveTextContent('0.003881');
+    expect(rows[2]).toHaveTextContent('0.003881');
+    expect(screen.getByTestId('f0-total')).toHaveTextContent('0.01');
+  });
+
+  it('临界批次 F₀ 四舍五入为 3.00 时判放行且不显示差额', async () => {
+    const boundaryResponse = {
+      f0: 3.0,
+      threshold: 3.0,
+      passed: true,
+      shortfall: null,
+      segments: [
+        { index: 1, startTime: 0, endTime: 60, startTemperature: 125.865, endTemperature: 125.865, startRate: 2.995712, endRate: 2.995712, durationSeconds: 60, contribution: 2.995711592 },
+      ],
+    };
+    const user = userEvent.setup();
+    mockFetchResponse(200, boundaryResponse);
+    render(<App />);
+    await user.click(screen.getByRole('button', { name: '计算致死量' }));
+
+    const conclusion = await screen.findByTestId('conclusion');
+    expect(conclusion).toHaveTextContent('放行');
+    expect(conclusion).not.toHaveTextContent('尚差');
+  });
+
   it('非法行使整次请求失败：展示行与字段并清除旧结论', async () => {
     const user = userEvent.setup();
     mockFetchResponse(200, passingResponse);

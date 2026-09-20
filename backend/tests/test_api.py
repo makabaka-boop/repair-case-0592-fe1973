@@ -82,6 +82,49 @@ class TestHappyPath:
         }
         assert post(payload).status_code == 200
 
+    def test_segment_contributions_are_unrounded_and_reproduce_total(self):
+        # 100 °C 下每段 30 s 贡献约 0.00388 min：接口若提前保留两位小数
+        # 会变成 0.0，质检员无法据分段复算合计。段贡献须为未舍入值。
+        payload = {
+            "points": [
+                {"time": 0, "temperature": 100.0},
+                {"time": 30, "temperature": 100.0},
+                {"time": 60, "temperature": 100.0},
+            ]
+        }
+        body = post(payload).json()
+        contributions = [s["contribution"] for s in body["segments"]]
+        assert contributions == pytest.approx([0.00388123558, 0.00388123558], abs=1e-9)
+        # 各段未舍入之和即未舍入合计，最终 F₀ 再整体四舍五入为 0.01
+        assert sum(contributions) == pytest.approx(0.00776247117, abs=1e-9)
+        assert body["f0"] == pytest.approx(0.01)
+
+    def test_heating_ramp_segment_uses_trapezoid_average(self):
+        payload = {
+            "points": [
+                {"time": 0, "temperature": 100.0},
+                {"time": 60, "temperature": 140.0},
+            ]
+        }
+        body = post(payload).json()
+        assert body["segments"][0]["contribution"] == pytest.approx(
+            38.8162365, abs=1e-6
+        )
+        assert body["passed"] is True
+
+    def test_rounded_threshold_is_release_boundary(self):
+        # 未舍入 total 略低于 3.0，但 F₀ 四舍五入为 3.00：判放行、无差额
+        payload = {
+            "points": [
+                {"time": 0, "temperature": 125.865},
+                {"time": 60, "temperature": 125.865},
+            ]
+        }
+        body = post(payload).json()
+        assert body["f0"] == pytest.approx(3.0)
+        assert body["passed"] is True
+        assert body["shortfall"] is None
+
 
 class TestValidationFailures:
     def test_single_point_rejected(self):

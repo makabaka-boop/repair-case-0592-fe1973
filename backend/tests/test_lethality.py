@@ -84,6 +84,37 @@ class TestComputeLethality:
             result.total_unrounded
         )
 
+    def test_heating_ramp_counts_high_end_rate(self):
+        # 回归：0 s/100 °C → 60 s/140 °C 的升温段必须按梯形法
+        # 计入终点高速率，贡献约 38.816 min（而非仅起点的 0.0078）
+        result = compute_lethality([(0, 100.0), (60, 140.0)])
+        assert result.segments[0].contribution == pytest.approx(
+            38.8162365, abs=1e-6
+        )
+        assert result.total_unrounded == pytest.approx(38.8162365, abs=1e-6)
+        assert result.f0 == Decimal("38.82")
+        assert result.passed is True
+
+    def test_pass_decision_uses_rounded_f0(self):
+        # 125.865 °C 恒温 60 s：未舍入 total ≈ 2.9957（小于 3.0），
+        # 但最终 F₀ 四舍五入为 3.00，应放行且无差额，不得出现
+        # “展示 3.00 却不放行、尚差 0.00”的矛盾
+        result = compute_lethality([(0, 125.865), (60, 125.865)])
+        assert result.f0 == Decimal("3.00")
+        assert result.passed is True
+        assert result.shortfall is None
+
+    def test_f0_just_below_threshold_after_rounding_still_fails(self):
+        # 对照边界：未舍入 2.9949… 四舍五入为 2.99，仍不放行，差额 0.01
+        import math
+
+        rate = 2.9949
+        temperature = 121.1 + 10.0 * math.log10(rate)
+        result = compute_lethality([(0, temperature), (60, temperature)])
+        assert result.f0 == Decimal("2.99")
+        assert result.passed is False
+        assert result.shortfall == Decimal("0.01")
+
     def test_fewer_than_two_points_rejected(self):
         with pytest.raises(ValueError):
             compute_lethality([(0, 121.1)])
